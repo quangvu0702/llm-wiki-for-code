@@ -549,18 +549,16 @@ Line 2 is pure matchable tokens from the article's Entry Points and Search Short
 
 ### Deliverable 2: `wiki/index.md`
 
-Starts empty with categories appropriate to the target codebase. Example categories for a typical web app:
+Starts empty. Categories are derived from the target codebase — **do not ship a default list**. The bootstrap agent must inspect top-level folders and domain to pick 5–8 categories that actually fit this codebase.
 
 ```markdown
 # Wiki Index
 
-## Core Domain
-## API & Routing
-## Data Layer
-## Background Jobs
-## Auth & Permissions
-## Frontend
-## Infrastructure
+<!-- Illustrative only — replace with 5-8 categories derived from the target
+     codebase's top-level folders and domain. For a typical web app these
+     might be: Core Domain, API & Routing, Data Layer, Background Jobs,
+     Auth & Permissions, Frontend, Infrastructure. A CLI, library, data
+     pipeline, or embedded codebase will need different categories. -->
 ```
 
 After bootstrap, populated entries look like:
