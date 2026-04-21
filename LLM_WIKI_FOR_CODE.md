@@ -509,7 +509,7 @@ Original designs used subfolders (`wiki/concepts/`, `wiki/systems/`). Testing sh
 
 **Cursor Skill version (recommended — copy to `.cursor/skills/wiki-memory/SKILL.md`):**
 
-```markdown
+````markdown
 ---
 name: wiki-memory
 description: >-
@@ -588,12 +588,12 @@ Do not defer. Complete wiki work at the end of the same turn, after the task out
 - Articles cover broad topics ("Connector System"), not narrow features ("GDrive folder filtering")
 - The tokens line in `index.md` is CRITICAL — no prose, only matchable tokens
 - Flat folder structure — all articles go directly in `wiki/`, never subfolders
-```
+````
 
 <details>
 <summary>CLAUDE.md / AGENTS.md version (for Claude Code / Codex — same protocol, different frontmatter)</summary>
 
-```markdown
+````markdown
 ## Wiki Protocol
 
 You have a persistent wiki at `wiki/`. Use it every session.
@@ -671,7 +671,7 @@ Do not defer. Complete wiki work at the end of the same turn, after the task out
 - Use multi-layered anchoring: function/class names + pattern names + structural truths + directory ownership + search keywords
 - The tokens line in index.md is CRITICAL — it's what makes articles findable. No prose, only matchable tokens.
 - Flat folder structure — all articles go directly in `wiki/`. Never create subfolders.
-```
+````
 </details>
 
 ### Deliverable 2: `wiki/index.md`
