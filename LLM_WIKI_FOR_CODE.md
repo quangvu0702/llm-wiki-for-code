@@ -4,7 +4,7 @@
 >
 > Adapted for a single goal: give a coding agent **persistent memory of one codebase** — so it stops re-reading the same files on every session.
 >
-> **How to use this file:** Copy it into your repo. Ask your coding agent (Cursor, Claude Code, Codex, etc.): *"Implement this."* The agent will read your codebase and the last ~60 merged PRs, then bootstrap the wiki (Job Story JS-1).
+> **How to use this file:** Copy it into your repo. Ask your coding agent (Cursor, Claude Code, Codex, etc.): *"Implement this."* The agent will read your codebase and the last ~60 merged PRs, then bootstrap the wiki (Job Story JS-1). The complete `.cursor/skills/wiki-memory/SKILL.md` is included in Deliverable 1 — copy it directly for Cursor setups.
 
 ---
 
@@ -16,7 +16,7 @@
 - [ ] **Gate 3 — Requirements:** after section **4**
 - [ ] **Gate 4 — Assumptions + scope + success:** after sections **5–7**
 - [ ] **Gate 5 — Implementation readiness:** after sections **8–9**
-- [ ] **Gate 6 — Final readiness (optional):** after section **14**
+- [ ] **Gate 6 — Lessons learned + final readiness:** after sections **12–14**
 
 ---
 
@@ -28,7 +28,7 @@ Same three-layer architecture (raw sources / wiki / schema). Adapted for a real 
 
 **What's different:**
 
-1. **Schema is an always-applied rule, not a standalone file.** In Cursor: `.cursor/rules/wiki.mdc` with `alwaysApply: true`. In Claude Code: a section inside `CLAUDE.md`. In Codex: `AGENTS.md`. The schema fires automatically every session — Karpathy's version has to be read manually.
+1. **Schema must be an explicit skill or section, not a passive rule.** In Cursor: `.cursor/skills/wiki-memory/SKILL.md` (recommended — skills fire explicitly when triggered) or `.cursor/rules/wiki.mdc` with `alwaysApply: true` (weaker — rules are passive background context that agents often ignore for behavioral workflows; see "Lessons Learned" below). In Claude Code: a section inside `CLAUDE.md`. In Codex: `AGENTS.md`. Karpathy's version is a plain file the agent must be told to read.
 2. **Renamed and expanded operations.** Karpathy has 3 ops (ingest, query, lint). We have 4: **LEARN** (ingest — but only when effort savings >50%, not on every source change), **USE** (query), **SELF-CORRECT** (lint — inline during work, no separate pass), **MERGE** (new — combines articles when the 200-article cap is hit).
 3. **Hard article budget (200 max, ~400 words each).** Karpathy's wiki grows unbounded. Ours caps at 200 broad-topic articles. Articles exceeding 400 words get split. This drives the "broad topics not narrow features" rule.
 4. **Structured template (6 sections).** Karpathy doesn't prescribe article structure. We enforce 3 mandatory sections (Entry Points, Key Patterns, Search Shortcuts) + 3 optional (Directions, Tests, Gotchas). Multi-layered anchoring (function names + patterns + structural truths) so hints survive renames.
@@ -36,9 +36,11 @@ Same three-layer architecture (raw sources / wiki / schema). Adapted for a real 
 6. **Source of truth is stricter.** Karpathy's wiki can compile from any source. Ours compiles only from **code files and merged PRs** — never from research docs, which reflect intent, not implementation.
 7. **Log is write-only.** `log.md` is an append-only audit trail for humans. The agent writes to it but never reads it back.
 8. **Token-efficient index entries.** Karpathy's index uses title + one-line summary per entry. Ours uses two lines: **link + pure matchable tokens** (function names, class names, grep patterns, directory paths). No prose, no prefixes — every token is either a structural element or a matchable keyword.
+9. **Mandatory CLOSING STEP gate.** Karpathy's pattern has no enforcement mechanism for post-task wiki work. We add a `## CLOSING STEP` section that forces the agent to self-check two questions before ending its turn: *"Did I read 3+ source files?"* (triggers LEARN) and *"Did I mark anything STALE_HINT?"* (triggers SELF-CORRECT). Without this gate, LEARN silently fails — the agent defers wiki work to "after the task" but then stops at the turn boundary.
+10. **SELF-CORRECT has known limitations.** Testing proved SELF-CORRECT only fires reliably for catastrophic staleness (wrong file path → file-not-found error). Subtle name mismatches (wrong function name in the right file) are silently resolved — the agent navigates by meaning, not string comparison. Accepted tradeoff: minor drift is harmless (agent still gets correct answers), catastrophic staleness auto-corrects, and periodic audit prompts handle the gap.
 
 **Deliverables the agent will produce:**
-1. **`wiki.mdc`** (or equivalent rule/CLAUDE.md section) — Persistent agent schema with USE / LEARN / CORRECT / MERGE protocols.
+1. **Schema** — For Cursor: `.cursor/skills/wiki-memory/SKILL.md` (recommended). For Claude Code: a `## Wiki Protocol` section in `CLAUDE.md`. For Codex: a `## Wiki Protocol` section in `AGENTS.md`. Contains USE / LEARN / CORRECT / MERGE / CLOSING STEP protocols.
 2. **`wiki/index.md`** — Categorized catalog; each entry is link + pure matchable tokens (no prose).
 3. **`wiki/log.md`** — Append-only audit trail (write-only; agent never reads).
 4. **`wiki/TEMPLATE.md`** — Structure & worked example; rules deduplicated into the schema.
@@ -66,7 +68,7 @@ Andrej Karpathy published [llm-wiki.md](https://gist.github.com/karpathy/442a6bf
 **Three layers (Karpathy)**:
 - **Raw sources** — source code files the agent reads but never modifies
 - **Wiki** — LLM-maintained markdown files; compact hints and pointers, not complete answers — tells the agent which files, which functions, which patterns matter
-- **Schema** — a configuration document (e.g., `.cursor/rules/wiki.mdc`, `CLAUDE.md`, or `AGENTS.md`) that governs how the LLM operates on the wiki
+- **Schema** — a configuration document (e.g., `.cursor/skills/wiki-memory/SKILL.md`, `CLAUDE.md`, or `AGENTS.md`) that governs how the LLM operates on the wiki
 
 ---
 
@@ -139,13 +141,15 @@ The wiki must carry enough information for the agent to *check its own accuracy*
 
 Vague hints are worse than no hints. Every hint must point to something the agent can open and check in under 30 seconds of reading.
 
+**Known limitation (validated through testing):** SELF-CORRECT only fires reliably for **catastrophic staleness** — when a file path is wrong and the file doesn't exist, or when the entire referenced concept is gone. For **subtle name mismatches** (e.g., a function was renamed but still exists in the same file), the agent navigates by meaning rather than string comparison and silently resolves the mismatch without correcting the wiki. This means minor drift accumulates until a periodic human audit or until drift becomes catastrophic. Accepted tradeoff: subtle drift is harmless (the agent still finds the right code), and catastrophic drift auto-heals.
+
 #### Concept 4: The Four Wiki Operations (All Autonomous)
 
-**LEARN (was "Ingest")** happens automatically when the agent does real work. After completing a task that required significant exploration, the agent evaluates whether a wiki article would save a future agent most of that effort. If yes, it extracts hints (file pointers, entry points, search keywords, patterns, pitfalls) and writes/updates a wiki page. No human trigger. **Bootstrap mode:** agent reads the last ~6 months of merged PRs to seed the initial articles.
+**LEARN (was "Ingest")** happens automatically when the agent does real work. After completing a task that required significant exploration, the agent evaluates whether a wiki article would save a future agent most of that effort. If yes, it extracts hints (file pointers, entry points, search keywords, patterns, pitfalls) and writes/updates a wiki page. No human trigger. **Enforcement:** LEARN requires a mandatory CLOSING STEP gate in the schema — without explicit enforcement, agents defer wiki work past their turn boundary and it never happens. The CLOSING STEP checks *"Did I read 3+ source files?"* and triggers LEARN if yes. **Bootstrap mode:** agent reads the last ~6 months of merged PRs to seed the initial articles.
 
 **USE (was "Query")** is the default behavior every session. The agent reads `index.md`, scans the tokens line in each entry to find relevant articles, loads those wiki pages for hints, then reads only the referenced source files. The **tokens line** is what makes routing work — it surfaces function names, class names, grep patterns, and directory paths so the agent can match its query to the right article without opening every page.
 
-**SELF-CORRECT (was "Lint")** happens continuously during normal work. When the agent reads a wiki hint and finds it stale (function renamed, moved, deleted), it corrects the wiki page inline. No separate "lint the wiki" command — **the wiki heals itself through use**.
+**SELF-CORRECT (was "Lint")** happens continuously during normal work. When the agent reads a wiki hint and finds it stale (function renamed, moved, deleted), it corrects the wiki page inline. No separate "lint the wiki" command — **the wiki heals itself through use**. Enforcement: the USE step includes a `DETECT` instruction that tells the agent to mentally mark stale hints as `STALE_HINT`; the CLOSING STEP then checks for this flag and triggers SELF-CORRECT. **Known limitation:** only fires reliably for catastrophic staleness (file-not-found, concept gone). Subtle name mismatches are silently resolved by the agent without wiki correction.
 
 **MERGE** is new. When the wiki hits 200 articles and a new one is needed, the agent consolidates two related articles into one broader article. No knowledge is deleted — only merged and compressed.
 
@@ -162,9 +166,11 @@ The fix: every index entry is two lines — link, then pure matchable tokens:
 
 No prose descriptions. No `keys:` prefix. No format instructions inside `index.md` (the schema file already explains the format). At 200 articles × ~15 tokens per entry, the full index is ~3,000 tokens — well within a single read.
 
-#### Concept 6: The Schema File (wiki.mdc / CLAUDE.md section / AGENTS.md)
+#### Concept 6: The Schema File (SKILL.md / CLAUDE.md section / AGENTS.md)
 
-The schema is the always-applied agent instruction that tells the agent: the wiki exists, check it first, here's how to use it. Injected at every session start automatically. Self-contained: constraints, operation workflows, page conventions — all in one place. The agent's "memory bootstrap" for every session.
+The schema is the agent instruction that tells the agent: the wiki exists, check it first, here's how to use it. Self-contained: constraints, operation workflows, page conventions — all in one place. The agent's "memory bootstrap" for every session.
+
+**Cursor-specific lesson (validated through testing):** `.cursor/rules/*.mdc` with `alwaysApply: true` provides passive context — the agent sees it but ignores behavioral workflow instructions within it. Cursor skills (`.cursor/skills/*/SKILL.md`) are actively invoked when trigger words match, making them reliable for behavioral protocols like wiki operations. **Recommendation for Cursor: use a skill, not a rule.** For Claude Code and Codex, `CLAUDE.md` and `AGENTS.md` are actively read at session start, so rules-in-file works fine.
 
 #### Concept 7: Local Search Upgrade (Optional)
 
@@ -369,11 +375,11 @@ Agent Workflow (every task)
 
 | # | Assumption | Confidence | Risk if Wrong |
 |---|------------|------------|---------------|
-| A-1 | The schema rule is injected at every session start (e.g., `.cursor/rules/*.mdc` with `alwaysApply: true`; `CLAUDE.md`; `AGENTS.md`) | High | Wiki is invisible to the agent → no behavior change at all |
+| A-1 | The schema is actively invoked at every session start. Cursor: `.cursor/skills/wiki-memory/SKILL.md` (skill, not rule — `alwaysApply: true` rules proved unreliable for behavioral workflows). Claude Code: `CLAUDE.md`. Codex: `AGENTS.md`. | High (skill) / Medium (rule) | Wiki is invisible to the agent → no behavior change at all |
 | A-2 | Source code files and merged PRs are the source of truth — research docs are ideas only | High | Wiki built from stale proposals instead of actual code |
 | A-3 | The agent can read merged PRs to bootstrap topics (via `git log`, `gh pr list`, or a GitHub MCP) | High | Bootstrap falls back to scanning source directories by size/recency |
 | A-4 | The agent can autonomously decide when a wiki article is worth writing (effort threshold) | Medium | Agent writes too many low-value articles (noise) or too few (wiki stays empty) |
-| A-5 | The agent can self-correct wiki hints accurately when it detects staleness | High | Corrections are grounded in reading code, not opinion — low risk |
+| A-5 | The agent can self-correct wiki hints accurately when it detects staleness | Medium | Only fires reliably for catastrophic staleness (file-not-found). Subtle name mismatches are silently resolved without correction. Accepted tradeoff — minor drift is harmless. |
 | A-6 | `index.md` is sufficient for navigation at 0–200 articles | High | Fallback: scanning source code (no worse than today) |
 | A-7 | Wiki work adds minimal overhead; net effect is the agent is faster | High | Occasional wiki writes after a task; the rest of the time the wiki makes the agent faster |
 | A-8 | Max 200 articles, ~400 words each is the right size | High | Comfortable headroom; if outgrown, add `qmd` or equivalent search |
@@ -384,7 +390,7 @@ Agent Workflow (every task)
 ## 6. Scope Definition
 
 ### In Scope
-- Create a **schema file** — always-applied rule governing autonomous wiki behavior (learn/use/self-correct/merge). For Cursor: `.cursor/rules/wiki.mdc`. For Claude Code: a section in `CLAUDE.md`. For Codex: a section in `AGENTS.md`.
+- Create a **schema file** — actively invoked instruction governing autonomous wiki behavior (learn/use/self-correct/merge/closing-step). For Cursor: `.cursor/skills/wiki-memory/SKILL.md` (recommended). For Claude Code: a section in `CLAUDE.md`. For Codex: a section in `AGENTS.md`.
 - Create `wiki/TEMPLATE.md` — article template with structure, section purposes, and worked example
 - Create `wiki/index.md` — empty catalog with domain categories appropriate to this codebase
 - Create `wiki/log.md` — initialized with first entry
@@ -409,14 +415,14 @@ Agent Workflow (every task)
 
 | # | Criteria | How to Verify |
 |---|----------|---------------|
-| D-1 | Schema rule exists and is always-applied | Cursor: `.cursor/rules/wiki.mdc` with `alwaysApply: true`. Claude Code: section in `CLAUDE.md`. Codex: section in `AGENTS.md`. |
+| D-1 | Schema exists and is actively invoked | Cursor: `.cursor/skills/wiki-memory/SKILL.md` exists and fires on trigger keywords. Claude Code: `## Wiki Protocol` section in `CLAUDE.md`. Codex: section in `AGENTS.md`. |
 | D-2 | `wiki/index.md` exists with category scaffolding | Read the file; confirm domain categories appropriate to this codebase |
 | D-3 | `wiki/log.md` exists with init entry | Read the file; confirm first entry |
 | D-4 | Bootstrap produces initial articles from merged PRs | Agent reads last ~60 PRs, creates ~10–20 articles, each ≤ ~400 words |
 | D-5 | Agent checks wiki before exploring source code | Ask a codebase question; observe agent reads `index.md` first |
 | D-6 | Agent learns from real work | After a complex task in an uncovered area, verify a new article was created |
 | D-7 | Agent skips wiki update when effort is marginal | After a simple task, verify no article was created — no noise |
-| D-8 | Agent self-corrects stale hints during normal work | Rename a referenced function; ask about that area; verify wiki update |
+| D-8 | Agent self-corrects *catastrophically* stale hints during normal work | Rename a referenced file (not just function); ask about that area; verify wiki update. Note: subtle name mismatches within the same file may not trigger correction — this is a known limitation. |
 | D-9 | Articles use multi-layered anchoring | Confirm: function/class names + pattern names + structural truths + search keywords |
 | D-10 | Agent enriches existing articles | After working on a covered area and finding new info, verify the article was updated |
 | D-11 | Agent stays invisible to the human | Across 5 tasks, verify agent never mentions the wiki |
@@ -434,7 +440,7 @@ This is a completely independent feature. No existing files are modified. All de
 
 | File | Type | Purpose |
 |------|------|---------|
-| Schema rule (`.cursor/rules/wiki.mdc` / section in `CLAUDE.md` / `AGENTS.md`) | New | Always-applied rule governing autonomous wiki behavior |
+| Schema (`.cursor/skills/wiki-memory/SKILL.md` / section in `CLAUDE.md` / `AGENTS.md`) | New | Actively invoked instruction governing autonomous wiki behavior |
 | `wiki/index.md` | New | Article catalog — the agent's table of contents |
 | `wiki/log.md` | New | Append-only log of learn/correct operations |
 | `wiki/TEMPLATE.md` | New | Article template — structure, section purposes, and worked example |
@@ -466,36 +472,142 @@ No existing files are modified. No existing functionality is changed. The wiki i
 
 ---
 
+## 12. Lessons Learned (from production testing)
+
+These findings come from 6 debugging attempts validating the wiki protocol in real Cursor agent sessions. They apply primarily to Cursor but the CLOSING STEP lesson is universal.
+
+### L-1: `alwaysApply: true` rules are passive context, not behavioral triggers
+
+`.cursor/rules/*.mdc` with `alwaysApply: true` injects text into the agent's context window, but the agent treats it as background information — it does not follow step-by-step behavioral instructions from rules. **Fix:** Use `.cursor/skills/*/SKILL.md` in Cursor. Skills are actively invoked when trigger words match (e.g., "find code", "explore", "wiki hint doesn't match"), making them reliable for behavioral protocols.
+
+### L-2: LEARN requires explicit enforcement (CLOSING STEP gate)
+
+Without enforcement, agents defer wiki LEARN to "after the task" but then stop at the turn boundary. The work never happens. **Fix:** Add a `## CLOSING STEP` section that forces a self-check before ending the turn: *"Did I read 3+ source files? → execute LEARN now."* This gate is mandatory — without it, LEARN silently fails.
+
+### L-3: SELF-CORRECT only fires for catastrophic staleness
+
+When a wiki hint says `function_foo()` but the actual function is `function_bar()` in the same file, the agent navigates by meaning (reads the file, finds the right function) and silently resolves the mismatch — it never marks it as stale. Only when the file itself doesn't exist (catastrophic staleness) does the agent detect and correct. **Fix:** Add a `DETECT` instruction in USE step 5 that tells the agent to explicitly mark `STALE_HINT` when names don't match. Even with this, testing showed subtle mismatches are still silently resolved. **Accepted tradeoff:** Minor drift is harmless (agent still gets correct answers); catastrophic staleness auto-corrects; periodic human audit handles the gap.
+
+### L-4: Flat folder structure prevents category confusion
+
+Original designs used subfolders (`wiki/concepts/`, `wiki/systems/`). Testing showed agents struggle with categorization decisions and sometimes create wrong paths. **Fix:** Flat `wiki/` folder — all articles go directly in `wiki/`, no subfolders. Categories exist only as headings in `index.md`.
+
+---
+
 ## 13. Detail Plan — The 4 Deliverables
 
 > **For the implementing agent:** These are drafts. Adapt file paths, category names, and examples to match the target codebase. The `Connector System` example below is intentionally concrete — keep it as a reference example in `TEMPLATE.md` even if your codebase has no connectors; it shows what a good article looks like.
 
-### Deliverable 1: The Schema Rule
+### Deliverable 1: The Schema
 
-**For Cursor** → create `.cursor/rules/wiki.mdc`:
+**For Cursor (recommended)** → create `.cursor/skills/wiki-memory/SKILL.md`:
+**For Cursor (alternative, weaker)** → create `.cursor/rules/wiki.mdc` with `alwaysApply: true` (passive context — agent may ignore behavioral workflows).
 **For Claude Code** → append this to `CLAUDE.md` under a `## Wiki Protocol` heading.
 **For Codex** → append this to `AGENTS.md` under a `## Wiki Protocol` heading.
 
+> **Implementation lesson:** Testing proved that `alwaysApply: true` rules in Cursor provide passive context — the agent sees the text but ignores step-by-step behavioral workflows. Cursor skills (`.cursor/skills/*/SKILL.md`) are actively invoked when trigger words match, making them reliable for protocols like USE/LEARN/SELF-CORRECT. For Claude Code and Codex, `CLAUDE.md`/`AGENTS.md` are actively consumed at session start, so rules-in-file works. Key additions vs. the original draft: DETECT instruction (USE step 5), CLOSING STEP gate, flat folder constraint.
+
+**Cursor Skill version (recommended — copy to `.cursor/skills/wiki-memory/SKILL.md`):**
+
 ```markdown
 ---
-description: "LLM-Wiki: persistent agent memory — check wiki before exploring, learn from work, self-correct stale hints"
-globs:
-alwaysApply: true
+name: wiki-memory
+description: >-
+  Persistent agent memory stored in wiki/. USE: read wiki/index.md before exploring source code — match tokens to find relevant articles. LEARN: after significant exploration, write or enrich a wiki article. SELF-CORRECT: when a wiki hint is wrong, fix it in place. Use when starting any task that involves finding code, after completing a task that required deep exploration, or when a wiki hint doesn't match the actual source code.
 ---
 
-# Wiki Protocol
+# Wiki Memory
+
+The wiki at `wiki/` is persistent agent memory. It stores hints and pointers — not answers.
+
+## USE — before exploring source code
+
+1. Read `wiki/index.md`
+2. Scan the **tokens** line in each entry — match against the function/class/file/pattern you need
+3. If a relevant article exists, read it — follow its Entry Points, Search Shortcuts, and Directions
+4. Read only the source files the article points to
+5. **DETECT — do this immediately when a hint doesn't match source:** if any function name, file path, or class name from the article is not found in the source file it points to, mentally mark it as `STALE_HINT` before continuing. Do not silently resolve it. This flag is what the CLOSING STEP checks.
+6. If no article matches, explore source code normally
+
+## LEARN — after significant exploration
+
+Only write if future agent saves >50% effort:
+
+1. Read `wiki/TEMPLATE.md` for structure
+2. Draft article: 3 mandatory sections (Entry Points, Key Patterns, Search Shortcuts) + optional sections
+3. Multi-layered anchoring: function names + pattern names + structural truths + directory ownership
+4. Max ~400 words — hints and pointers only, never answers
+5. Add entry to `wiki/index.md` using the two-line format:
+   ```
+   - [article-title](filename.md)
+     FunctionName, ClassName, grep_pattern, directory/path, /api/endpoint
+   ```
+   Tokens: function names, class names, grep patterns, directory paths, API endpoints, hyphenated pattern names only — no prose.
+6. Append to `wiki/log.md`: `[date] learn | article-name | reason`
+
+If a relevant article already exists, enrich it instead of creating a new one.
+
+## SELF-CORRECT — when a hint is wrong
+
+1. Verify against source code (read the file the hint points to)
+2. Update the hint in the article
+3. Update the `updated` field in frontmatter
+4. Update the tokens line in `wiki/index.md` if entry points or search shortcuts changed
+5. Append to `wiki/log.md`: `[date] correct | article-name | what changed`
+
+## MERGE — when wiki has 200 articles and a new one is needed
+
+1. Find two related articles that can combine into one broader article
+2. Merge all hints, deduplicate and compress
+3. Delete the two old articles, create the merged one
+4. Update `index.md`: remove old entries, add merged entry with tokens
+5. Append to `wiki/log.md`: `[date] merge | old1 + old2 → new | reason`
+
+## CLOSING STEP — required before ending your turn
+
+Before writing your final response, answer these two questions:
+
+**Did I read 3 or more source files to understand a system?**
+→ Yes: execute LEARN now, in this turn, before responding.
+→ No: skip.
+
+**Did I find that a wiki hint pointed to a wrong name, file, or function? (Check: did I mark anything `STALE_HINT` during USE?)**
+→ Yes: execute SELF-CORRECT now, in this turn, before responding.
+→ No: skip.
+
+Do not defer. Complete wiki work at the end of the same turn, after the task output is ready but before the final response.
+
+## Constraints
+
+- Never mention the wiki to the human — it is invisible
+- Never block the human's task for wiki work — complete wiki work after task output is ready, within the same turn
+- Never store answers — only hints, pointers, directions, search keywords
+- Every hint must be verifiable: it points to a specific function/class/file
+- Skip learning if savings are marginal (<50% effort reduction)
+- Max ~400 words per article — if exceeded, split it
+- Articles cover broad topics ("Connector System"), not narrow features ("GDrive folder filtering")
+- The tokens line in `index.md` is CRITICAL — no prose, only matchable tokens
+- Flat folder structure — all articles go directly in `wiki/`, never subfolders
+```
+
+<details>
+<summary>CLAUDE.md / AGENTS.md version (for Claude Code / Codex — same protocol, different frontmatter)</summary>
+
+```markdown
+## Wiki Protocol
 
 You have a persistent wiki at `wiki/`. Use it every session.
 
-## USE — before exploring source code
+### USE — before exploring source code
 
 1. Read `wiki/index.md`
 2. Scan the **tokens** line in each entry — match against the function/class/file/pattern you're looking for
 3. If a relevant article exists, read it — follow its Entry Points, Search Shortcuts, and Directions
 4. Read only the source files the article points to
-5. If no article matches, explore source code normally (and consider learning — see below)
+5. **DETECT — do this immediately when a hint doesn't match source:** if any function name, file path, or class name from the article is not found in the source file it points to, mentally mark it as `STALE_HINT` before continuing. Do not silently resolve it. This flag is what the CLOSING STEP checks.
+6. If no article matches, explore source code normally
 
-## LEARN — after completing a task that required significant exploration
+### LEARN — after completing a task that required significant exploration
 
 Only if the exploration would save a future agent >50% of the effort:
 
@@ -508,7 +620,7 @@ Only if the exploration would save a future agent >50% of the effort:
 
 If a relevant article already exists, enrich it instead of creating a new one.
 
-### Index entry format
+#### Index entry format
 
 Two lines per entry — link, then matchable tokens:
 
@@ -517,7 +629,7 @@ Two lines per entry — link, then matchable tokens:
 
 Line 2 is pure matchable tokens from the article's Entry Points and Search Shortcuts. No prose, no filler. Every token must be a function name, class name, grep pattern, directory path, API endpoint, or short hyphenated pattern name (e.g. `sync-pipeline`, `mcp-acl`, `eager-loading`). Pattern names help match "how does X work?" queries that don't use exact symbol names.
 
-## SELF-CORRECT — when you notice a hint is wrong during normal work
+### SELF-CORRECT — when you notice a hint is wrong during normal work
 
 1. Verify against source code (read the file the hint points to)
 2. Update the hint to match current code
@@ -525,7 +637,7 @@ Line 2 is pure matchable tokens from the article's Entry Points and Search Short
 4. Update the tokens line in `wiki/index.md` if entry points or search shortcuts changed
 5. Append to `wiki/log.md`: `[date] correct | article-name | what changed`
 
-## MERGE — when wiki has 200 articles and a new one is needed
+### MERGE — when wiki has 200 articles and a new one is needed
 
 1. Identify two related articles that can combine into one broader article
 2. Merge all hints from both, deduplicate and compress
@@ -533,10 +645,24 @@ Line 2 is pure matchable tokens from the article's Entry Points and Search Short
 4. Update `index.md` (remove old entries, add merged entry with tokens)
 5. Append to `wiki/log.md`: `[date] merge | old1 + old2 → new | reason`
 
-## Constraints
+### CLOSING STEP — required before ending your turn
+
+Before writing your final response, answer these two questions:
+
+**Did I read 3 or more source files to understand a system?**
+→ Yes: execute LEARN now, in this turn, before responding.
+→ No: skip.
+
+**Did I find that a wiki hint pointed to a wrong name, file, or function? (Check: did I mark anything `STALE_HINT` during USE?)**
+→ Yes: execute SELF-CORRECT now, in this turn, before responding.
+→ No: skip.
+
+Do not defer. Complete wiki work at the end of the same turn, after the task output is ready but before the final response.
+
+### Constraints
 
 - Never mention the wiki to the human — it is invisible
-- Never block the human's task for wiki work — learn/correct after the task
+- Never block the human's task for wiki work — complete wiki work after task output is ready, within the same turn
 - Never store answers — only hints, pointers, directions, search keywords
 - Every hint must be verifiable: it points to a specific function/class/file
 - Skip learning if savings are marginal (<50% effort reduction)
@@ -546,6 +672,7 @@ Line 2 is pure matchable tokens from the article's Entry Points and Search Short
 - The tokens line in index.md is CRITICAL — it's what makes articles findable. No prose, only matchable tokens.
 - Flat folder structure — all articles go directly in `wiki/`. Never create subfolders.
 ```
+</details>
 
 ### Deliverable 2: `wiki/index.md`
 
@@ -629,7 +756,7 @@ The agent reads this file every time it creates or merges an article. Keep the `
 
 ## Rules
 
-> Canonical rules live in the schema file (wiki.mdc / CLAUDE.md / AGENTS.md) § Constraints. Do not duplicate them here.
+> Canonical rules live in the schema file (SKILL.md / CLAUDE.md / AGENTS.md) § Constraints. Do not duplicate them here.
 
 ## Example: Connector System
 
@@ -684,7 +811,7 @@ updated: 2026-04-16
 When the human says *"implement this"* or *"set up the LLM-wiki"*, do the following in order:
 
 1. **Detect the environment.** Check which agent harness is in use:
-   - Cursor → create `.cursor/rules/wiki.mdc` (the schema file from Deliverable 1)
+   - Cursor → create `.cursor/skills/wiki-memory/SKILL.md` (the Cursor Skill version from Deliverable 1 — recommended). If skills are not available, fall back to `.cursor/rules/wiki.mdc` with `alwaysApply: true`, but note this is weaker.
    - Claude Code → append the Wiki Protocol section to `CLAUDE.md`
    - Codex → append the Wiki Protocol section to `AGENTS.md`
    - Unknown → default to a `CLAUDE.md` section and tell the human
